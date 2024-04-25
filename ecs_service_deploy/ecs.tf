@@ -4,8 +4,8 @@ resource "aws_ecs_cluster" "main" {
   name = "nb-demo-cluster"
 }
 
-data "template_file" "cb_app" {
-  template = file("./templates/ecs/cb_app.json.tpl")
+data "template_file" "nb-demo-app" {
+  template = file("./templates/ecs/nb-demo-app.json.tpl")
 
   vars = {
     app_image      = var.app_image
@@ -23,7 +23,7 @@ resource "aws_ecs_task_definition" "app" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.fargate_cpu
   memory                   = var.fargate_memory
-  container_definitions    = data.template_file.cb_app.rendered
+  container_definitions    = data.template_file.nb-demo-app.rendered
 }
 
 resource "aws_ecs_service" "main" {
