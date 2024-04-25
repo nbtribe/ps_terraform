@@ -26,8 +26,18 @@ resource "aws_lambda_layer_version" "python_requests_layer" {
 
   compatible_runtimes = ["python3.10"]
 }
+## Create SNS to send msg
+resource "aws_sns_topic" "user_updates_topic" {
+  name = "CNJ-topic"
+}
+##Create Subscription
+resource "aws_sns_topic_subscription" "user_email_target" {
+  topic_arn = aws_sns_topic.user_updates_topic.arn
+  protocol  = "email"
+  endpoint  = "<<EMAIL_TARGET>>"
+}
 
-resource "aws_lambda_function" "eventbridge_function" {
+resource "aws_lambda_function" "scheduled_function" {
   function_name = "Scheduled-CN-Joke"
   filename      = data.archive_file.LambdaZipFile.output_path
   handler       = "app.lambda_handler"
@@ -36,6 +46,11 @@ resource "aws_lambda_function" "eventbridge_function" {
   memory_size   = 128
   timeout       = 30
   layers        =[aws_lambda_layer_version.python_requests_layer.arn]
+  environment {
+    variables= {
+      TOPIC_ARN = aws_sns_topic.user_updates_topic.arn
+    }
+  }
 }
 
 resource "aws_iam_role" "scheduler_role" {
@@ -66,7 +81,7 @@ resource "aws_iam_role_policy" "eventbridge_invoke_policy" {
           "lambda:InvokeFunction"
         ],
         "Effect" : "Allow",
-        "Resource" : aws_lambda_function.eventbridge_function.arn
+        "Resource" : aws_lambda_function.scheduled_function.arn
       }
     ]
   })
@@ -102,11 +117,28 @@ resource "aws_iam_role_policy" "lambda_logs_policy" {
         ],
         "Effect" : "Allow",
         "Resource" : [
-          "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${aws_lambda_function.eventbridge_function.function_name}:*"
+          "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${aws_lambda_function.scheduled_function.function_name}:*"
         ]
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy" "lambda_SNS_policy" {
+  name = "SNSAccess"
+  role = aws_iam_role.iam_for_lambda.id
+  policy = jsonencode({
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "sns:*"
+            ],
+            "Effect": "Allow",
+            "Resource": "*"
+        }
+    ]
+})
 }
 
 resource "aws_scheduler_schedule" "invoke_lambda_schedule" {
@@ -116,14 +148,14 @@ resource "aws_scheduler_schedule" "invoke_lambda_schedule" {
   }
   schedule_expression = "rate(1 hour)"
   target {
-    arn      = aws_lambda_function.eventbridge_function.arn
+    arn      = aws_lambda_function.scheduled_function.arn
     role_arn = aws_iam_role.scheduler_role.arn
     input    = jsonencode({ "input" : "This message was sent using EventBridge Scheduler!" })
   }
 }
 
 output "ScheduleTargetFunction" {
-  value       = aws_lambda_function.eventbridge_function.arn
+  value       = aws_lambda_function.scheduled_function.arn
   description = "The ARN of the Lambda function being invoked"
 }
 
